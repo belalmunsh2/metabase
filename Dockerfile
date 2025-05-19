@@ -4,8 +4,9 @@
 
 FROM node:22-bullseye AS builder
 
+# Default VERSION so bin/build.sh :version never fails
 ARG MB_EDITION=oss
-ARG VERSION
+ARG VERSION="0.0.0-custom"
 
 WORKDIR /home/node
 
@@ -27,10 +28,10 @@ RUN apt-get update \
 
 COPY . .
 
-# Ensure Git operations work in this owned directory
+# Allow Git operations in this workspace
 RUN git config --global --add safe.directory /home/node
 
-# Build the frontend & the uberjar
+# Build the frontend & uberjar (VERSION now always defined)
 RUN yarn --frozen-lockfile \
   && INTERACTIVE=false CI=true MB_EDITION=$MB_EDITION \
      bin/build.sh :version ${VERSION}
@@ -67,21 +68,20 @@ RUN apk add --no-cache \
   && chmod a+rwx /plugins \
   && rm -rf /var/cache/apk/*
 
-# Copy over the built uberjar
+# Copy the built uberjar
 COPY --from=builder /home/node/target/uberjar/metabase.jar /app/metabase.jar
 
-# Make the jar world-readable at build-time
+# Make the JAR world-readable at build time
 RUN chmod o+r /app/metabase.jar
 
-# Tell Jetty (Metabase’s web server) to bind to Railway’s $PORT
+# Bind Jetty to Railway’s $PORT
 ENV MB_JETTY_PORT=$PORT
 
-# Tune the JVM heap via Railway’s JAVA_OPTS variable (set in Railway UI)
-# e.g.: -Xms128m -Xmx384m on Free tier
+# Allow tuning heap via Railway’s JAVA_OPTS (set in Railway UI)
 ENV JAVA_OPTS="${JAVA_OPTS:-}"
 
-# Expose the default port (for documentation; Railway uses $PORT internally)
+# Expose 3000 for documentation (Railway uses $PORT internally)
 EXPOSE 3000
 
-# Minimal entrypoint: expand $PORT and $JAVA_OPTS, then run
+# Minimal entrypoint: expand $PORT and $JAVA_OPTS, then exec Java
 ENTRYPOINT ["/bin/sh", "-c", "exec java $JAVA_OPTS -jar /app/metabase.jar"]
